@@ -1,9 +1,8 @@
 [Adblock Plus 2.0]
-! Checksum: nglscyEqqpD+k34p4Ic+oQ
 ! Version: 201902021151
-! Title: EasyList China+EasyList
-! Last modified: 02 Feb 2019 11:51 UTC
-! Expires: 1 days (update frequency)
+! Title: EasyList China+EasyList（优化版）
+! Last Modified: 2019.2.2
+! Expires: 6 hours
 ! Homepage: http://abpchina.org/forum/
 !
 ! EasyList China and EasyList combination subscription
@@ -18,10 +17,13 @@
 !
 !-----------------------General advert blocking filters-----------------------!
 
-! 白名单
+!-白名单
 @@||dmm.com^
 
-!-去除腾讯视频部分
+!-腾讯视频
+||vd.l.qq.com/proxyhttp$domain=v.qq.com
+||vi.l.qq.com/proxyhttp$domain=v.qq.com
+http://*.tc.qq.com/*.mp4*vkey=$domain=v.qq.com
 !//apd-*.qq.com/
 !##.mod_ad
 !##.adsbox
@@ -32,6 +34,16 @@
 !/adplugin/*
 !||qq.com^*.ts?
 
+!-优酷
+||tip.soku.com/searches/soku/kubox/v4/sideads.json?
+youku.com##.h5-ext-layer > div:has(span)
+youku.com##.h5-ext-layer-adsdk
+
+!-爱奇艺
+//*/videos/other/*.f4v
+iqiyi.com##.black-screen
+
+!-原EasyList China+EasyList
 -1688-wp-media/ads/
 -880-80-4.jpg
 .bid/ads/
