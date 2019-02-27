@@ -1,0 +1,15 @@
+port: 8888
+socks-port: 8889
+redir-port: 7892
+allow-lan: true
+dns:
+  enable: true
+  ipv6: false
+  listen: 0.0.0.0:53
+  enhanced-mode: redir-host
+  nameserver:
+    - 114.114.114.114
+    - 223.5.5.5
+    - tls://dns.rubyfish.cn:853
+  fallback:
+    - 8.8.8.8
