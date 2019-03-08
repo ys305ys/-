@@ -30,6 +30,7 @@
 !qq.com##.txp_ad_link
 !/adplugin/*
 !||qq.com^*.ts?
+!.qq.com/*.mp4?*sdtfrom=&
 
 !-原EasyList China+EasyList
 -1688-wp-media/ads/
@@ -15185,7 +15186,6 @@ duanwenxue.com##.qgzdwx
 ||yljiaoluo.com^
 ||yqjxzw.com^
 !#Qq.com
-.qq.com/*.mp4?*sdtfrom=&
 .qq.com/*.mp4?*sdtfrom=|
 !#Rewrite filters
 !#Sex8.cc
