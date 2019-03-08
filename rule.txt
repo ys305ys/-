@@ -1,0 +1,59 @@
+; Summary: Proxy Rule List
+; Date: 2019.3.8
+
+#BEGIN
+
+[Wildcard]
+
+; general
+*://*.vimeocdn.com/*
+*://*.bing.com/*
+
+; news
+*://*.economist.com/*
+
+; art
+*://*.istockphoto.com/*
+
+; game
+*://*.minecraft.net/*
+
+; education
+*://*.sci-hub.*/*
+*://*.rus.ec/*
+*://*.gov/*
+
+; entertainment
+*://*.wecandeo.com/*
+*://*.brightcove.com/*
+
+; shopping
+*://*.sierra.com/*
+
+; jp
+*://*.jp/*
+*://203.104.209.*/*
+*://*.shiropro-re.net/*
+*://*.millennium-war.net/*
+*://*.hekk.org/*
+
+; hk&tw&uk
+*://*.hk/*
+*://*.tw/*
+*://*.uk/*
+
+; debug
+*://ip.cn/*
+
+[RegExp]
+
+google
+github
+dmm
+pinterest
+garena
+btbtt
+nordstrom
+cloudfront
+
+#END
