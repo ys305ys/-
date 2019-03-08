@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         解除B站区域限制
 // @namespace    http://tampermonkey.net/
-// @version      7.2.2
+// @version      7.3.5
 // @description  通过替换获取视频地址接口的方式, 实现解除B站区域限制; 只对HTML5播放器生效;
 // @author       ipcjs
 // @supportURL   https://github.com/ipcjs/bilibili-helper/issues
@@ -86,7 +86,7 @@ function scriptSource(invokeBy) {
         ok: { en: 'OK', zh_cn: '确定', },
         close: { en: 'Close', zh_cn: '关闭' },
         welcome_to_acfun: '<p><b>缺B乐 了解下？</b></p><br><p>PS: A站白屏/播放卡顿/被区域限制等问题，可以通过安装 <a href="https://github.com/esterTion/AcFun-HTML5-Player">AcFun HTML5 Player</a> 解决</p>',
-        version_remind: `1. 修复新版番剧页面不能播放的问题<br>`
+        version_remind: '',
     }
     const _t = (key) => {
         const text = r_text[key]
@@ -225,6 +225,35 @@ function scriptSource(invokeBy) {
         return ret
     }
 
+    const util_safe_get = (code) => {
+        return eval(`
+        (()=>{
+            try{
+                return ${code}
+            }catch(e){
+                console.warn(e.toString())
+                return null
+            }
+        })()
+        `)
+    }
+
+    const util_ui_alert = function (message, resolve, reject) {
+        setTimeout(() => {
+            if (resolve) {
+                if (window.confirm(message)) {
+                    resolve()
+                } else {
+                    if (reject) {
+                        reject()
+                    }
+                }
+            } else {
+                alert(message)
+            }
+        }, 500)
+    }
+
     const util_init = (function () {
         const RUN_AT = {
             DOM_LOADED: 0,
@@ -259,7 +288,10 @@ function scriptSource(invokeBy) {
         }
 
         if (window.document.readyState !== 'loading') {
-            throw new Error('unit_init must run at loading, current is ' + document.readyState)
+            util_ui_alert(`${GM_info.script.name} 加载时机不对, 不能保证正常工作\n\n1. 点击'确定', 刷新页面/重载脚本\n2. 若依然出现该提示, 请尝试'硬性重新加载'(快捷键一般为ctrl+f5)\n3. 若还是出现该提示, 请尝试关闭再重新打开该页面\n4. 若反复出现该提示, 请尝试换个浏览器\n`, () => {
+                location.reload(true)
+            })
+            // throw new Error('unit_init must run at loading, current is ' + document.readyState)
         }
 
         window.document.addEventListener('DOMContentLoaded', dclCreator(RUN_AT.DOM_LOADED))
@@ -687,22 +719,6 @@ function scriptSource(invokeBy) {
         document.body.appendChild(div);
     }
 
-    const util_ui_alert = function (message, resolve, reject) {
-        setTimeout(() => {
-            if (resolve) {
-                if (window.confirm(message)) {
-                    resolve()
-                } else {
-                    if (reject) {
-                        reject()
-                    }
-                }
-            } else {
-                alert(message)
-            }
-        }, 500)
-    }
-
     /**
      * - param.content: 内容元素数组/HTML
      * - param.showConfirm: 是否显示确定按钮
@@ -945,28 +961,46 @@ function scriptSource(invokeBy) {
     })()
 
     const balh_feature_switch_to_old_player = (function () {
-        if (!util_page.av() || localStorage.balh_disable_switch_to_old_player) {
-            return
+        if (util_page.av() && !localStorage.balh_disable_switch_to_old_player) {
+            util_init(() => {
+                let $switchToOldBtn = document.querySelector('#entryOld > .old-btn > a')
+                if ($switchToOldBtn) {
+                    util_ui_pop({
+                        content: `${GM_info.script.name} 对新版播放器的支持还在测试阶段, 不稳定, 推荐切换回旧版`,
+                        confirmBtn: '切换回旧版',
+                        onConfirm: () => $switchToOldBtn.click(),
+                        onClose: () => localStorage.balh_disable_switch_to_old_player = r.const.TRUE,
+                    })
+                }
+            })
         }
-        util_init(() => {
-            let $switchToOldBtn = document.querySelector('#entryOld > .old-btn > a')
-            if ($switchToOldBtn) {
-                util_ui_pop({
-                    content: `${GM_info.script.name} 对新版播放器的支持还在测试阶段, 不稳定, 推荐切换回旧版`,
-                    confirmBtn: '切换回旧版',
-                    onConfirm: () => $switchToOldBtn.click(),
-                    onClose: () => localStorage.balh_disable_switch_to_old_player = r.const.TRUE,
+        if (util_page.new_bangumi()) {
+            if (util_cookie.stardustpgcv === '0606') {
+                util_init(() => {
+                    let $panel = document.querySelector('.error-container > .server-error')
+                    if ($panel) {
+                        $panel.insertBefore(_('text', '临时切换到旧版番剧页面中...'), $panel.firstChild)
+                        util_cookie.stardustpgcv = '0'
+                        localStorage.balh_temp_switch_to_old_page = r.const.TRUE
+                        location.reload()
+                    }
                 })
             }
-        })
+            if (localStorage.balh_temp_switch_to_old_page) {
+                util_cookie.stardustpgcv = '0606'
+                delete localStorage.balh_temp_switch_to_old_page
+            }
+        }
     })()
     const balh_feature_area_limit_new = (function () {
         if (balh_is_close) return
 
-        if (!(util_page.av() && balh_config.enable_in_av)) {
+        if (!(
+            (util_page.av() && balh_config.enable_in_av) || util_page.new_bangumi()
+        )) {
             return
         }
-        if (window.__playinfo__) {
+        function replacePlayInfo() {
             util_log("window.__playinfo__", window.__playinfo__)
             window.__playinfo__origin = window.__playinfo__
             let playinfo = undefined
@@ -983,6 +1017,17 @@ function scriptSource(invokeBy) {
                     playinfo = value
                 },
             })
+        }
+        // 新的av页面, __playinfo__直接放在head中, 这里可以直接读取到
+        if (window.__playinfo__) {
+            replacePlayInfo()
+        } else {
+            // 新的bangumi页面, __playinfo__放在body中, 这里不能直接读取, 需要等dom加载完成才能读取到
+            util_init(() => {
+                if (window.__playinfo__) {
+                    replacePlayInfo()
+                }
+            }, util_init.PRIORITY.FIRST, util_init.RUN_AT.DOM_LOADED)
         }
     })()
     const balh_feature_area_limit = (function () {
@@ -1124,6 +1169,7 @@ function scriptSource(invokeBy) {
         }
 
         function injectAjax() {
+            log('injectAjax at:', window.jQuery)
             let originalAjax = $.ajax;
             $.ajax = function (arg0, arg1) {
                 let param;
@@ -1177,7 +1223,8 @@ function scriptSource(invokeBy) {
                             param.url += `?${Object.keys(param.data).map(key => `${key}=${param.data[key]}`).join('&')}`
                             param.data = undefined
                         }
-                        if (util_page.new_bangumi()) {
+                        if (isBangumi(util_safe_get('window.__INITIAL_STATE__.mediaInfo.season_type || window.__INITIAL_STATE__.mediaInfo.ssType'))) {
+                            log(`playurl add 'module=bangumi' param`)
                             param.url += `&module=bangumi`
                         }
                     }
@@ -1362,6 +1409,14 @@ function scriptSource(invokeBy) {
             var season_id = getSeasonId();
             util_cookie.set('balh_season_' + season_id, limit ? '1' : undefined, ''); // 第三个参数为'', 表示时Session类型的cookie
             log('setAreaLimitSeason', season_id, limit);
+        }
+        /** 使用该方法判断是否需要添加module=bangumi参数, 并不准确... */
+        function isBangumi(season_type) {
+            log(`season_type: ${season_type}`)
+            // 1是动画
+            // 5是电视剧
+            // 2是电影
+            return season_type != null // 有season_type, 就是bangumi?
         }
 
         function getSeasonId() {
@@ -1587,18 +1642,23 @@ function scriptSource(invokeBy) {
                         .then(r => this.processProxySuccess(r, false))
                 },
                 transToProxyUrl: function (url, bangumi) {
-                    if (bangumi === undefined) {
+                    let params = url.split('?')[1];
+                    if (bangumi === undefined) { // 自动判断
                         // av页面中的iframe标签形式的player, 不是番剧视频
                         bangumi = !util_page.player_in_av()
-                        // season_type, 1 为动画, 5 为电视剧; 为5/3时, 不是番剧视频
+                        // url中存在season_type的情况
                         let season_type_param = util_url_param(url, 'season_type')
-                        if (season_type_param === '5' || season_type_param === '3') {
+                        if (season_type_param && !isBangumi(+season_type_param)) {
                             bangumi = false
                         }
-                    }
-                    var params = url.split('?')[1];
-                    if (!bangumi) {
-                        params = params.replace(/&?module=(\w+)/, '') // 移除可能存在的module参数
+                        if (!bangumi) {
+                            params = params.replace(/&?module=(\w+)/, '') // 移除可能存在的module参数
+                        }
+                    } else if (bangumi === true) { // 保证添加module=bangumi参数
+                        params = params.replace(/&?module=(\w+)/, '')
+                        params += '&module=bangumi'
+                    } else if (bangumi === false) { // 移除可能存在的module参数
+                        params = params.replace(/&?module=(\w+)/, '')
                     }
                     return `${balh_config.server}/BPplayurl.php?${params}`;
                 },
@@ -1644,14 +1704,19 @@ function scriptSource(invokeBy) {
                     util_ui_player_msg('从代理服务器拉取视频地址中...')
                     return playurl_by_proxy._asyncAjax(originUrl) // 优先从代理服务器获取
                         .catch(e => {
-                            if (e instanceof AjaxException && e.code === 1) { // code: 1 表示非番剧视频, 不能使用番剧视频参数
+                            if (e instanceof AjaxException) {
                                 util_ui_player_msg(e)
-                                util_ui_player_msg('尝试使用非番剧视频接口拉取视频地址...')
-                                return playurl_by_proxy._asyncAjax(originUrl, false)
-                                    .catch(e2 => Promise.reject(e)) // 忽略e2, 返回原始错误e
-                            } else {
-                                return Promise.reject(e)
+                                if (e.code === 1) { // code: 1 表示非番剧视频, 不能使用番剧视频参数
+                                    util_ui_player_msg('尝试使用非番剧视频接口拉取视频地址...')
+                                    return playurl_by_proxy._asyncAjax(originUrl, false)
+                                        .catch(e2 => Promise.reject(e)) // 忽略e2, 返回原始错误e
+                                } else if (e.code === 10004) { // code: 10004, 表示视频被隐藏, 一般添加module=bangumi参数可以拉取到视频
+                                    util_ui_player_msg('尝试使用番剧视频接口拉取视频地址...')
+                                    return playurl_by_proxy._asyncAjax(originUrl, true)
+                                        .catch(e2 => Promise.reject(e))
+                                }
                             }
+                            return Promise.reject(e)
                         })
                         .catch(e => {
                             util_ui_player_msg(e)
@@ -1704,8 +1769,12 @@ function scriptSource(invokeBy) {
             })
         }
         injectXHR();
-        if (!window.jQuery) { // 若还未加载jQuery, 则监听
-            var jQuery;
+        if (true) {
+            let jQuery = window.jQuery;
+            if (jQuery) { // 若已加载jQuery, 则注入
+                injectAjax()
+            }
+            // 需要监听jQuery变化, 因为有时会被设置多次...
             Object.defineProperty(window, 'jQuery', {
                 configurable: true, enumerable: true, set: function (v) {
                     // debugger
@@ -1747,8 +1816,6 @@ function scriptSource(invokeBy) {
                     return jQuery;
                 }
             });
-        } else {
-            injectAjax();
         }
     }())
     const balh_feature_remove_pre_ad = (function () {
