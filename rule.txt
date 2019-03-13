@@ -1,5 +1,5 @@
 ; Summary: Proxy Rule List
-; Date: 2019.3.8
+; Date: 2019.3.13
 
 #BEGIN
 
@@ -21,11 +21,12 @@
 ; education
 *://*.sci-hub.*/*
 *://*.rus.ec/*
-*://*.gov/*
+*://*.userapi.com/*
 
 ; entertainment
 *://*.wecandeo.com/*
 *://*.brightcove.com/*
+*://*.btbtt.*/*
 
 ; shopping
 *://*.sierra.com/*
@@ -37,10 +38,15 @@
 *://*.millennium-war.net/*
 *://*.hekk.org/*
 
-; hk&tw&uk
+; hk&tw&uk&ru&gov
 *://*.hk/*
 *://*.tw/*
 *://*.uk/*
+*://*.ru/*
+*://*.gov/*
+
+; adult
+*://*dio*/*
 
 ; debug
 *://ip.cn/*
@@ -52,7 +58,6 @@ github
 dmm
 pinterest
 garena
-btbtt
 nordstrom
 cloudfront
 
