@@ -8,13 +8,18 @@
 ; general
 *://*.vimeocdn.com/*
 *://*.bing.com/*
+*://itunes.apple.com/*
 
 ; news
 *://*.economist.com/*
+*://*.tiqcdn.com/*
 
 ; art
 *://*.istockphoto.com/*
 *://*.artstation.com/*
+
+; coding
+*://*.91yun.org/*
 
 ; game
 *://*.minecraft.net/*
@@ -39,15 +44,15 @@
 *://*.millennium-war.net/*
 *://*.hekk.org/*
 
+; adult
+*://*dio*/*
+
 ; hk&tw&uk&ru&gov
 *://*.hk/*
 *://*.tw/*
 *://*.uk/*
 *://*.ru/*
 *://*.gov/*
-
-; adult
-*://*dio*/*
 
 ; debug
 *://ip.cn/*
