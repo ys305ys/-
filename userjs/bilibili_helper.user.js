@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         解除B站区域限制
 // @namespace    http://tampermonkey.net/
-// @version      7.3.5
+// @version      7.5.13
 // @description  通过替换获取视频地址接口的方式, 实现解除B站区域限制; 只对HTML5播放器生效;
 // @author       ipcjs
 // @supportURL   https://github.com/ipcjs/bilibili-helper/issues
@@ -26,10 +26,12 @@
 'use strict';
 const log = console.log.bind(console, 'injector:')
 
-if (location.href.match('link.acg.tv/forum.php') != null && location.href.match('access_key') != null && window.opener != null) {
-    window.stop();
-    document.children[0].innerHTML = '<title>BALH - 授权</title><meta charset="UTF-8" name="viewport" content="width=device-width">正在跳转……';
-    window.opener.postMessage('balh-login-credentials: ' + location.href, '*');
+if (location.href.match('link.acg.tv/forum.php') != null) {
+    if (location.href.match('access_key') != null && window.opener != null) {
+        window.stop();
+        document.children[0].innerHTML = '<title>BALH - 授权</title><meta charset="UTF-8" name="viewport" content="width=device-width">正在跳转……';
+        window.opener.postMessage('balh-login-credentials: ' + location.href, '*');
+    }
     return;
 }
 
@@ -86,7 +88,7 @@ function scriptSource(invokeBy) {
         ok: { en: 'OK', zh_cn: '确定', },
         close: { en: 'Close', zh_cn: '关闭' },
         welcome_to_acfun: '<p><b>缺B乐 了解下？</b></p><br><p>PS: A站白屏/播放卡顿/被区域限制等问题，可以通过安装 <a href="https://github.com/esterTion/AcFun-HTML5-Player">AcFun HTML5 Player</a> 解决</p>',
-        version_remind: '',
+        version_remind: ``,
     }
     const _t = (key) => {
         const text = r_text[key]
@@ -116,6 +118,7 @@ function scriptSource(invokeBy) {
             server: {
                 S0: 'https://biliplus.ipcjs.top',
                 S1: 'https://www.biliplus.com',
+                CUSTOM: '__custom__',
                 defaultServer: function () {
                     return this.S0
                 },
@@ -893,18 +896,29 @@ function scriptSource(invokeBy) {
         const cookies = util_cookie.all() // 缓存的cookies
         return new Proxy({ /*保存config的对象*/ }, {
             get: function (target, prop) {
+                if (prop === 'server') {
+                    const server_inner = balh_config.server_inner
+                    const server = server_inner === r.const.server.CUSTOM ? balh_config.server_custom : server_inner
+                    return server
+                }
                 if (prop in target) {
                     return target[prop]
                 } else { // 若target中不存在指定的属性, 则从缓存的cookies中读取, 并保存到target中
                     let value = cookies['balh_' + prop]
                     switch (prop) {
-                        case 'server':
+                        case 'server_inner':
                             value = value || r.const.server.defaultServer()
-                            // 从win域名迁移到新的默认域名
-                            if (value.includes('biliplus.ipcjs.win')) {
-                                value = r.const.server.defaultServer()
-                                balh_config.server = value
+                            // 迁移回biliplus, 只会执行一次
+                            if (util_page.new_bangumi() && !localStorage.balh_migrate_to_1) {
+                                localStorage.balh_migrate_to_1 = r.const.TRUE
+                                if (value.includes('biliplus.ipcjs.top')) {
+                                    value = r.const.server.defaultServer()
+                                    balh_config.server = value
+                                }
                             }
+                            break
+                        case 'server_custom':
+                            value = value || ''
                             break
                         case 'mode':
                             value = value || (balh_config.blocked_vip ? r.const.mode.REDIRECT : r.const.mode.DEFAULT)
@@ -1188,6 +1202,7 @@ function scriptSource(invokeBy) {
                     .catch(e => oriError(e))
                 // 转换原始请求的结果的transformer
                 let oriResultTransformer
+                let oriResultTransformerWhenProxyError
                 let one_api;
                 // log(param)
                 if (param.url.match('/web_api/get_source')) {
@@ -1229,6 +1244,10 @@ function scriptSource(invokeBy) {
                         }
                     }
                     one_api = bilibiliApis._playurl;
+                    if (isNewPlayurl) {
+                        oriResultTransformerWhenProxyError = p => p
+                            .then(json => !json.code ? json.result : json)
+                    }
                     oriResultTransformer = p => p
                         .then(json => {
                             log(json)
@@ -1302,19 +1321,20 @@ function scriptSource(invokeBy) {
                 }
 
                 if (one_api && oriResultTransformer) {
+                    // 请求结果通过mySuccess/Error获取, 将其包装成Promise, 方便处理
+                    let oriResultPromise = new Promise((resolve, reject) => {
+                        mySuccess = resolve
+                        myError = reject
+                    })
                     if (needRedirect()) {
-                        // 清除原始请求的回调
-                        mySuccess = util_func_noop
-                        myError = util_func_noop
                         // 通过proxy, 执行请求
                         one_api.asyncAjax(param.url)
+                            // proxy报错时, 返回原始请求的结果
+                            .catch(e => oriResultPromise.compose(oriResultTransformerWhenProxyError))
                             .compose(dispatchResultTransformer)
                     } else {
-                        // 请求结果通过mySuccess/Error获取, 将其包装成Promise, 方便处理
-                        new Promise((resolve, reject) => {
-                            mySuccess = resolve
-                            myError = reject
-                        }).compose(oriResultTransformer)
+                        oriResultPromise
+                            .compose(oriResultTransformer)
                             .compose(dispatchResultTransformer)
                     }
                 }
@@ -1475,7 +1495,7 @@ function scriptSource(invokeBy) {
         }
 
         function isAreaLimitForPlayUrl(json) {
-            return json.durl && json.durl.length === 1 && json.durl[0].length === 15126 && json.durl[0].size === 124627;
+            return (json.errorcid && json.errorcid == '8986943') || (json.durl && json.durl.length === 1 && json.durl[0].length === 15126 && json.durl[0].size === 124627);
         }
 
         var bilibiliApis = (function () {
@@ -1665,7 +1685,10 @@ function scriptSource(invokeBy) {
                 processProxySuccess: function (data, alertWhenError = true) {
                     // data有可能为null
                     if (data && data.code === -403) {
-                        util_ui_alert(`突破黑洞失败\n当前代理服务器（${balh_config.server}）依然有区域限制\n\n可以考虑进行如下尝试:\n1. 进行“帐号授权”\n2. 换个代理服务器\n\n点击确定, 打开设置页面`, balh_ui_setting.show)
+                        util_ui_pop({
+                            content: `<b>code-403</b>: <i style="font-size:4px;white-space:nowrap;">${JSON.stringify(data)}</i>\n\n当前代理服务器（${balh_config.server}）依然有区域限制\n\n可以考虑进行如下尝试:\n1. 进行“帐号授权”\n2. 换个代理服务器\n3. 耐心等待服务端修复问题\n4. 上报问题: <a href="https://github.com/ipcjs/bilibili-helper/issues/399">code-403问题汇总</a>\n\n点击确定, 打开设置页面`,
+                            onConfirm: balh_ui_setting.show,
+                        })
                     } else if (data === null || data.code) {
                         util_error(data);
                         if (alertWhenError) {
@@ -1675,7 +1698,10 @@ function scriptSource(invokeBy) {
                         }
                     } else if (isAreaLimitForPlayUrl(data)) {
                         util_error('>>area limit');
-                        util_ui_alert(`突破黑洞失败\n需要登录\n点此确定进行登录`, balh_feature_sign.showLogin);
+                        util_ui_pop({
+                            content: `突破黑洞失败\n需要登录\n点此确定进行登录`,
+                            onConfirm: balh_feature_sign.showLogin
+                        })
                     } else {
                         if (balh_config.flv_prefer_ws) {
                             data.durl.forEach(function (seg) {
@@ -1718,21 +1744,21 @@ function scriptSource(invokeBy) {
                             }
                             return Promise.reject(e)
                         })
-                        .catch(e => {
-                            util_ui_player_msg(e)
-                            util_ui_player_msg('尝试换用B站接口拉取视频地址(清晰度低)...')
-                            // 失败时, 转而从B站获取
-                            return playurl_by_bilibili._asyncAjax(originUrl)
-                                .catch(e2 => {
-                                    util_ui_player_msg(e2) // 打印错误日志
-                                    // 直接忽略playurl_by_bilibili的错误, 改成返回playurl_by_proxy的错误...
-                                    return Promise.reject(e)
-                                })
-                        })
                         // 报错时, 延时1秒再发送错误信息
                         .catch(e => util_promise_timeout(1000).then(r => Promise.reject(e)))
                         .catch(e => {
-                            util_ui_alert(`拉取视频地址失败\n${util_stringify(e)}\n\n可以考虑进行如下尝试:\n1. 多刷新几下页面\n2. 进入设置页面更换代理服务器\n3. 耐心等待代理服务器端修复问题\n\n点击确定按钮, 刷新页面`, window.location.reload.bind(window.location))
+                            let msg
+                            if (typeof e === 'object' && e.statusText == 'error') {
+                                msg = '代理服务器临时不可用'
+                                util_ui_player_msg(msg)
+                            } else {
+                                msg = util_stringify(e)
+                            }
+                            util_ui_pop({
+                                content: `## 拉取视频地址失败\n原因: ${msg}\n\n可以考虑进行如下尝试:\n1. 多<a href="">刷新</a>几下页面\n2. 进入<a href="javascript:bangumi_area_limit_hack.showSettings();">设置页面</a>更换代理服务器\n3. 耐心等待代理服务器端修复问题`,
+                                onConfirm: window.location.reload.bind(window.location),
+                                confirmBtn: '刷新页面'
+                            })
                             return Promise.reject(e)
                         })
                 }
@@ -1861,6 +1887,9 @@ function scriptSource(invokeBy) {
 
         var xhr = new XMLHttpRequest(), testUrl = [r.const.server.S0, r.const.server.S1],
             testUrlIndex = 0, isReused = false, prevNow, outputArr = [];
+        if (balh_config.server_custom) {
+            testUrl.push(balh_config.server_custom)
+        }
         pingOutput.textContent = '正在进行服务器测速…';
         pingOutput.style.height = '100px';
         xhr.open('GET', '', true);
@@ -2126,7 +2155,7 @@ function scriptSource(invokeBy) {
             let $pageBody = document.querySelector('.b-page-body');
             if (!$pageBody) { // 若不存在, 则创建
                 $pageBody = _('div', { className: '.b-page-body' });
-                document.querySelector('.error-body').parentNode.appendChild($pageBody)
+                document.querySelector('body').insertBefore($pageBody, document.querySelector('#app'))
                 // 添加相关样式
                 document.head.appendChild(_('link', { type: 'text/css', rel: 'stylesheet', href: '//static.hdslb.com/css/core-v5/page-core.css' }))
             }
@@ -2406,7 +2435,7 @@ function scriptSource(invokeBy) {
 
         function onSettingsFormChange(e) {
             var name = e.target.name;
-            var value = e.target.type === 'checkbox' ? (e.target.checked ? r.const.TRUE : r.const.FALSE) : e.target.value
+            var value = e.target.type === 'checkbox' ? (e.target.checked ? r.const.TRUE : r.const.FALSE) : e.target.value.trim()
             balh_config[name.replace('balh_', '')] = value
             log(name, ' => ', value);
         }
@@ -2449,6 +2478,7 @@ function scriptSource(invokeBy) {
             }
         }
 
+        let customServerCheckText
         var settingsDOM = _('div', { id: 'balh-settings', style: { position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,.7)', animationName: 'balh-settings-bg', animationDuration: '.5s', zIndex: 10000, cursor: 'pointer' }, event: { click: function (e) { if (e.target === this) util_ui_msg.close(), document.body.style.overflow = '', this.remove(); } } }, [
             _('style', {}, [_('text', r.css.settings)]),
             _('div', { style: { position: 'absolute', background: '#FFF', borderRadius: '10px', padding: '20px', top: '50%', left: '50%', width: '600px', transform: 'translate(-50%,-50%)', cursor: 'default' } }, [
@@ -2457,8 +2487,20 @@ function scriptSource(invokeBy) {
                 _('form', { id: 'balh-settings-form', event: { change: onSettingsFormChange } }, [
                     _('text', '代理服务器：'), _('a', { href: 'javascript:', event: { click: balh_feature_runPing } }, [_('text', '测速')]), _('br'),
                     _('div', { style: { display: 'flex' } }, [
-                        _('label', { style: { flex: 1 } }, [_('input', { type: 'radio', name: 'balh_server', value: r.const.server.S0 }), _('text', '默认代理服务器（土豆服）')]),
-                        _('label', { style: { flex: 1 } }, [_('input', { type: 'radio', name: 'balh_server', value: r.const.server.S1 }), _('text', `${r.const.server.S1}（更稳定）`), _('a', { href: 'https://www.biliplus.com/?about' }, [_('text', '（捐赠）')])]),
+                        _('label', { style: { flex: 1 } }, [_('input', { type: 'radio', name: 'balh_server_inner', value: r.const.server.S0 }), _('text', '土豆服')]),
+                        _('label', { style: { flex: 1 } }, [_('input', { type: 'radio', name: 'balh_server_inner', value: r.const.server.S1 }), _('text', 'BiliPlus')]),
+                        _('label', { style: { flex: 2 } }, [
+                            _('input', { type: 'radio', name: 'balh_server_inner', value: r.const.server.CUSTOM }), _('text', `自定义: `),
+                            _('input', {
+                                type: 'text', name: 'balh_server_custom', placeholder: '形如：https://hd.pilipili.com', event: {
+                                    input: (event) => {
+                                        customServerCheckText.innerText = /^https?:\/\/[\w.]+$/.test(event.target.value.trim()) ? '✔️' : '❌'
+                                        onSettingsFormChange(event)
+                                    }
+                                }
+                            }),
+                            customServerCheckText = _('span'),
+                        ]),
                     ]), _('br'),
                     _('div', { id: 'balh_server_ping', style: { whiteSpace: 'pre-wrap', overflow: 'auto' } }, []),
                     _('text', 'upos服务器：'), _('br'),
@@ -2572,6 +2614,22 @@ function scriptSource(invokeBy) {
         }, util_init.PRIORITY.DEFAULT, util_init.RUN_AT.DOM_LOADED_AFTER)
     }())
 
+    const balh_mark_serve_check_area_limit_state = (function () {
+        if (!util_page.bangumi_md()) {
+            return
+        }
+        // 服务器需要通过这个接口判断是否有区域限制
+        // 详见: https://github.com/ipcjs/bilibili-helper/issues/385
+        util_init(() => {
+            const season_id = util_safe_get(`window.__INITIAL_STATE__.mediaInfo.param.season_id`)
+            if (season_id) {
+                balh_api_plus_season(season_id)
+                    .then(r => log(`season${season_id}`, r))
+                    .catch(e => log(`season${season_id}`, e))
+            }
+        })
+    }())
+
     function main() {
         util_log(
             'mode:', balh_config.mode,
@@ -2590,7 +2648,16 @@ function scriptSource(invokeBy) {
             getCookie: util_cookie.get,
             login: balh_feature_sign.showLogin,
             logout: balh_feature_sign.showLogout,
-            getAllMsg: util_log_hub.getAllMsg,
+            getLog: util_log_hub.getAllMsg,
+            showSettings: balh_ui_setting.show,
+            set1080P: function () {
+                const settings = JSON.parse(localStorage.bilibili_player_settings)
+                const oldQuality = settings.setting_config.defquality
+                util_debug(`defauality: ${oldQuality}`)
+                settings.setting_config.defquality = 112 // 1080P
+                localStorage.bilibili_player_settings = JSON.stringify(settings)
+                location.reload()
+            },
             _clear_local_value: function () {
                 delete localStorage.oauthTime
                 delete localStorage.balh_h5_not_first
