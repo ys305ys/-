@@ -1,4 +1,0 @@
-port: 8888
-socks-port: 8889
-redir-port: 7892
-allow-lan: true
