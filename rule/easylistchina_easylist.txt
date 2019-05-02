@@ -31,6 +31,7 @@
 !/adplugin/*
 !||qq.com^*.ts?
 !.qq.com/*.mp4?*sdtfrom=&
+!qq.com##.player_bg_ad
 
 !-原EasyList China+EasyList
 -1688-wp-media/ads/
@@ -10990,7 +10991,6 @@ news.ifeng.com##.play_center
 kaifu.com##.play_fmt
 1111.baidu.com,bdimg.com,tieba.baidu.com,tieba.com,xingqu.baidu.com##.play_list_panel
 ifeng.com##.playad
-qq.com##.player_bg_ad
 sgamer.com##.plc > div > a[href*=".vgcool.com"]
 moonbbs.com##.plc.plm > div > div > a[href*=".dealmoon.com"]
 firefox.com.cn,firefoxchina.cn##.pm-crack
