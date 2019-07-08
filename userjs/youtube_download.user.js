@@ -1,85 +1,374 @@
 // ==UserScript==
-// @name        The best Youtube Downloader, download video MP4, AVI, MP3, HD, 1080P, 2K, 4k & 8K
-// @namespace   https://distillvideo.com/
-// @version     5.1.1
-// @date        2018-11-07
-// @description Download any video and music (audio) from Youtube, Twitter, Vimeo, Facebook, Instagram, SoundCloud, Dailymotion, Liveleak, Break, Imgur, Mashable, Reddit, 1TV, 9gag, VK, TED, youku, bilibili, IMDb, ESPN, Flickr, Bandcamp, pornhub, 9gag, VK.com, ok.ru, tv.com and 10,000 more sites for free. Also support to download subtitles. Free, fast and easy to use. No need to install any annoying softwares. Supporting MP4, WEBM, AVI, 3GP, FLV, H64, ACC, FLA, MP3, M4A, 8K, 6K,4K, 2K, 1080, 720, 480, 360, etc.
-// @author      DistillVideo.com
-// @copyright   2018, DistillVideo.com
-// @homepage    https://distillvideo.com/extension#extension
-// @compatible chrome
-// @compatible firefox
-// @compatible opera
-// @compatible safari
-// @license MIT https://opensource.org/licenses/MIT
-// @match          *://*.youtube.com/*
+// @name         Local YouTube Downloader
+// @name:zh-TW   本地 YouTube 下載器
+// @name:zh-CN   本地 YouTube 下载器
+// @namespace    https://blog.maple3142.net/
+// @version      0.8.5
+// @description  Get youtube raw link without external service.
+// @description:zh-TW  不需要透過第三方的服務就能下載 YouTube 影片。
+// @description:zh-CN  不需要透过第三方的服务就能下载 YouTube 影片。
+// @author       maple3142
+// @match        https://*.youtube.com/*
+// @require      https://unpkg.com/vue@2.6.10/dist/vue.js
+// @require      https://unpkg.com/xfetch-js@0.3.4/xfetch.min.js
+// @compatible   firefox >=52
+// @compatible   chrome >=55
+// @license      MIT
 // ==/UserScript==
 
-(function() {
-    'use strict';
+;(function() {
+	'use strict'
+	const DEBUG = true
+	const createLogger = (console, tag) =>
+		Object.keys(console)
+			.map(k => [k, (...args) => (DEBUG ? console[k](tag + ': ' + args[0], ...args.slice(1)) : void 0)])
+			.reduce((acc, [k, fn]) => ((acc[k] = fn), acc), {})
+	const logger = createLogger(console, 'YTDL')
 
-    if (document.getElementById("polymer-app") || document.getElementById("masthead") || window.Polymer) {
-    setInterval(function() {
-        if (window.location.href.indexOf("watch?v=") < 0) {
-            return false;
-        }
-        if (document.getElementById("count") && document.getElementById("distillvideo") === null) {
-            Addytpolymer();
-        }
-    }, 100);
-} else {
-    setInterval(function() {
-        if (window.location.href.indexOf("watch?v=") < 0) {
-            return false;
-        }
-        if (document.getElementById("watch7-subscription-container") && document.getElementById("distillvideo") === null) {
-            AddhtmlDV();
-        }
-    }, 100);
+	const LANG_FALLBACK = 'en'
+	const LOCALE = {
+		en: {
+			togglelinks: 'Show/Hide Links',
+			stream: 'Stream',
+			adaptive: 'Adaptive',
+			videoid: 'Video Id: ',
+			thumbnail: 'Thumbnail',
+			inbrowser_adaptive_merger: 'In browser adaptive video & audio merger'
+		},
+		'zh-tw': {
+			togglelinks: '顯示 / 隱藏連結',
+			stream: '串流 Stream',
+			adaptive: '自適應 Adaptive',
+			videoid: '影片 ID: ',
+			thumbnail: '影片縮圖',
+			inbrowser_adaptive_merger: '瀏覽器版自適應影片及聲音合成器'
+		},
+		zh: {
+			togglelinks: '下载视频',
+			stream: '串流 Stream',
+			adaptive: '自适应 Adaptive',
+			videoid: '视频 ID: ',
+			thumbnail: '视频缩图',
+			inbrowser_adaptive_merger: '浏览器版自适应视频及声音合成器'
+		}
+	}
+	const findLang = l => {
+		// language resolution logic: zh-tw --(if not exists)--> zh --(if not exists)--> LANG_FALLBACK(en)
+		l = l.toLowerCase().replace('_', '-')
+		if (l in LOCALE) return l
+		else if (l.length > 2) return findLang(l.split('-')[0])
+		else return LANG_FALLBACK
+	}
+	const $ = (s, x = document) => x.querySelector(s)
+	const $el = (tag, opts) => {
+		const el = document.createElement(tag)
+		Object.assign(el, opts)
+		return el
+	}
+	const parseDecsig = data => {
+		try {
+			if (data.startsWith('var script')) {
+				// they inject the script via script tag
+				const obj = {}
+				const document = { createElement: () => obj, head: { appendChild: () => {} } }
+				eval(data)
+				data = obj.innerHTML
+			}
+			const fnnameresult = /\.set\([^,]*,encodeURIComponent\(([^(]*)\(/.exec(data)
+			const fnname = fnnameresult[1]
+			const _argnamefnbodyresult = new RegExp(fnname + '=function\\((.+?)\\){(.+?)}').exec(data)
+			const [_, argname, fnbody] = _argnamefnbodyresult
+			const helpernameresult = /;(.+?)\..+?\(/.exec(fnbody)
+			const helpername = helpernameresult[1]
+			const helperresult = new RegExp('var ' + helpername + '={[\\s\\S]+?};').exec(data)
+			const helper = helperresult[0]
+			logger.log(`parsedecsig result: %s=>{%s\n%s}`, argname, helper, fnbody)
+			return new Function([argname], helper + '\n' + fnbody)
+		} catch (e) {
+			logger.error('parsedecsig error: %o', e)
+			logger.info('script content: %s', data)
+			logger.info(
+				'If you encounter this error, please copy the full "script content" to https://pastebin.com/ for me.'
+			)
+		}
+	}
+	const parseQuery = s => [...new URLSearchParams(s).entries()].reduce((acc, [k, v]) => ((acc[k] = v), acc), {})
+	const getVideo = async (id, decsig) => {
+		return xf
+			.get(`https://www.youtube.com/get_video_info?video_id=${id}&el=detailpage`)
+			.text()
+			.then(async data => {
+				const obj = parseQuery(data)
+				logger.log(`video %s data: %o`, id, obj)
+				if (obj.status === 'fail') {
+					throw obj
+				}
+				let stream = []
+				if (obj.url_encoded_fmt_stream_map) {
+					stream = obj.url_encoded_fmt_stream_map.split(',').map(parseQuery)
+					logger.log(`video %s stream: %o`, id, stream)
+					if (stream[0].sp && stream[0].sp.includes('sig')) {
+						stream = stream
+							.map(x => ({ ...x, s: decsig(x.s) }))
+							.map(x => ({ ...x, url: x.url + `&sig=${x.s}` }))
+					}
+				}
+
+				let adaptive = []
+				if (obj.adaptive_fmts) {
+					adaptive = obj.adaptive_fmts.split(',').map(parseQuery)
+					logger.log(`video %s adaptive: %o`, id, adaptive)
+					if (adaptive[0].sp && adaptive[0].sp.includes('sig')) {
+						adaptive = adaptive
+							.map(x => ({ ...x, s: decsig(x.s) }))
+							.map(x => ({ ...x, url: x.url + `&sig=${x.s}` }))
+					}
+				}
+				logger.log(`video %s result: %o`, id, { stream, adaptive })
+				return { stream, adaptive, meta: obj }
+			})
+	}
+	const getVideoDetails = id =>
+		xf
+			.get('https://www.googleapis.com/youtube/v3/videos', {
+				qs: {
+					key: 'AIzaSyBk6o0igFl-P4Qe4ouVlRTPlqX7kruWdUg',
+					part: 'snippet',
+					id
+				}
+			})
+			.json(r => r.items[0])
+	const getHighresThumbnail = id =>
+		getVideoDetails(id).then(
+			details =>
+				Object.values(details.snippet.thumbnails)
+					.map(d => {
+						const x = {}
+						x.url = d.url
+						x.size = d.width * d.height
+						return x
+					})
+					.sort((a, b) => b.size - a.size)[0].url
+		)
+	const workerMessageHandler = async e => {
+		const decsig = await xf.get(e.data.path).text(parseDecsig)
+		const result = await getVideo(e.data.id, decsig)
+		self.postMessage(result)
+	}
+	const ytdlWorkerCode = `
+importScripts('https://unpkg.com/xfetch-js@0.3.4/xfetch.min.js')
+const DEBUG=${DEBUG}
+const logger=(${createLogger})(console, 'YTDL')
+const parseQuery=${parseQuery}
+const parseDecsig=${parseDecsig}
+const getVideo=${getVideo}
+self.onmessage=${workerMessageHandler}`
+	const ytdlWorker = new Worker(URL.createObjectURL(new Blob([ytdlWorkerCode])))
+	const workerGetVideo = (id, path) => {
+		logger.log(`workerGetVideo start: %s %s`, id, path)
+		return new Promise((res, rej) => {
+			const callback = e => {
+				ytdlWorker.removeEventListener('message', callback)
+				logger.log('workerGetVideo end: %o', e.data)
+				res(e.data)
+			}
+			ytdlWorker.addEventListener('message', callback)
+			ytdlWorker.postMessage({ id, path })
+		})
+	}
+
+	const template = `
+<div class="box" :class="{'dark':dark}">
+	<div @click="hide=!hide" class="box-toggle t-center fs-14px" v-text="strings.togglelinks"></div>
+	<div :class="{'hide':hide}">
+		<div class="t-center fs-14px" v-text="strings.videoid+id"></div>
+		<div class="t-center fs-14px">
+			<a :href="thumbnail" target="_blank" v-text="strings.thumbnail"></a>
+		</div>
+		<div class="d-flex">
+			<div class="f-1 of-h">
+				<div class="t-center fs-14px" v-text="strings.stream"></div>
+				<a class="ytdl-link-btn fs-14px" target="_blank" v-for="vid in stream" :href="vid.url" :title="vid.type" v-text="vid.quality||vid.type"></a>
+			</div>
+			<div class="f-1 of-h">
+				<div class="t-center fs-14px" v-text="strings.adaptive"></div>
+				<a class="ytdl-link-btn fs-14px" target="_blank" v-for="vid in adaptive" :href="vid.url" :title="vid.type" v-text="[vid.quality_label,vid.type].filter(x=>x).join(':')"></a>
+			</div>
+		</div>
+		<div class="of-h t-center">
+			<a href="https://maple3142.github.io/mergemp4/" target="_blank" v-text="strings.inbrowser_adaptive_merger"></a>
+		</div>
+	</div>
+</div>
+`.slice(1)
+	const app = new Vue({
+		data() {
+			return {
+				hide: true,
+				id: '',
+				stream: [],
+				adaptive: [],
+				dark: false,
+				thumbnail: null,
+				lang: findLang(navigator.language)
+			}
+		},
+		computed: {
+			strings() {
+				return LOCALE[this.lang.toLowerCase()]
+			}
+		},
+		watch: {
+			async hide() {
+				if (this.thumbnail == null) {
+					app.thumbnail = await getHighresThumbnail(this.id)
+				}
+			}
+		},
+		template
+	})
+	logger.log(`default language: %s`, app.lang)
+
+	// attach element
+	const shadowHost = $el('div')
+	const shadow = shadowHost.attachShadow ? shadowHost.attachShadow({ mode: 'closed' }) : shadowHost // no shadow dom
+	logger.log('shadowHost: %o', shadowHost)
+	const container = $el('div')
+	shadow.appendChild(container)
+	app.$mount(container)
+
+	if (DEBUG) {
+		// expose some functions for debugging
+		unsafeWindow.$app = app
+		unsafeWindow.parseQuery = parseQuery
+		unsafeWindow.parseDecsig = parseDecsig
+		unsafeWindow.getVideo = getVideo
+	}
+
+	const getLangCode = () => {
+		if (typeof ytplayer !== 'undefined') {
+			return ytplayer.config.args.host_language
+		} else if (typeof yt !== 'undefined') {
+			return yt.config_.GAPI_LOCALE
+		}
+		return null
+	}
+	const load = async id => {
+		const scriptel = $('script[src$="base.js"]')
+		try {
+			const data = await workerGetVideo(id, scriptel.src)
+			logger.log('video loaded: %s', id)
+			app.id = id
+			app.stream = data.stream
+			app.adaptive = data.adaptive
+			app.meta = data.meta
+
+			// lazy load thumbnail to save quota, so it will only load thumbnail when expanding
+			// app.thumbnail = await getHighresThumbnail(id)
+			app.thumbnail = null
+
+			const actLang = getLangCode()
+			if (actLang !== null) {
+				const lang = findLang(actLang)
+				logger.log('youtube ui lang: %s', actLang)
+				logger.log('ytdl lang:', lang)
+				app.lang = lang
+			}
+		} catch (err) {
+			logger.error('load', err)
+		}
+	}
+	let prev = null
+	setInterval(() => {
+		const el =
+			$('#info-contents') ||
+			$('#watch-header') ||
+			$('.page-container:not([hidden]) ytm-item-section-renderer>lazy-list')
+		if (el && !el.contains(shadowHost)) {
+			el.appendChild(shadowHost)
+		}
+		if (location.href !== prev) {
+			logger.log(`page change: ${prev} -> ${location.href}`)
+			prev = location.href
+			if (location.pathname === '/watch') {
+				shadowHost.style.display = 'block'
+				const id = parseQuery(location.search).v
+				logger.log('start loading new video: %s', id)
+				app.hide = true // fold it
+				load(id)
+			} else {
+				shadowHost.style.display = 'none'
+			}
+		}
+	}, 1000)
+
+	// listen to dark mode toggle
+	const $html = $('html')
+	new MutationObserver(() => {
+		app.dark = $html.getAttribute('dark') === 'true'
+	}).observe($html, { attributes: true })
+	app.dark = $html.getAttribute('dark') === 'true'
+
+	const css = `
+.hide{
+display: none;
 }
-
-function AddhtmlDV() {
-    if (document.getElementById("watch7-subscription-container")) {
-        var wrap = document.getElementById('watch7-subscription-container');
-        var button = "<div id='distillvideo' style='display: inline-block; margin-left: 10px; vertical-align: middle;'>";
-        button += "<a href=\"https://zh.savefrom.net/#url=" + window.location.href + "\" title=\"下载视频\" target=\"_blank\"" +
-            "style=\"display: inline-block; font-size: inherit; height: 22px; border: 1px solid rgb(0, 183, 90); border-radius: 3px; padding-left: 28px; cursor: pointer; vertical-align: middle; position: relative; line-height: 22px; text-decoration: none; z-index: 1; color: rgb(255, 255, 255);\">";
-        button += "<i style=\"position: absolute; display: inline-block; left: 6px; top: 3px; background-image: url(data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz48c3ZnIHhtbG5zOmRjPSJodHRwOi8vcHVybC5vcmcvZGMvZWxlbWVudHMvMS4xLyIgeG1sbnM6Y2M9Imh0dHA6Ly9jcmVhdGl2ZWNvbW1vbnMub3JnL25zIyIgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIiB4bWxuczpzdmc9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZlcnNpb249IjEuMSIgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiB2aWV3Qm94PSIwIDAgMTYgMTYiIGlkPSJzdmcyIiB4bWw6c3BhY2U9InByZXNlcnZlIj48cGF0aCBkPSJNIDQsMCA0LDggMCw4IDgsMTYgMTYsOCAxMiw4IDEyLDAgNCwwIHoiIGZpbGw9IiNmZmZmZmYiIC8+PC9zdmc+); background-size: 12px; background-repeat: no-repeat; background-position: center center; width: 16px; height: 16px;\"></i>";
-        button += "<span style=\"padding-right: 12px;\">Download</span></a></div>";
-        var style = "<style>#distillvideo button::-moz-focus-inner{padding:0;margin:0}#distillvideo a{background-color:#15388c}#distillvideo a:hover{background-color:#E91E63}#distillvideo a:active{background-color:rgb(0, 151, 74)}</style>";
-        var tmp = wrap.innerHTML;
-        wrap.innerHTML = tmp + button + style;
-    }
+.t-center{
+text-align: center;
 }
-
-function Addytpolymer() {
-    var buttonDiv = document.createElement("span");
-    buttonDiv.style.width = "100%";
-    buttonDiv.id = "distillvideo";
-    var addButton = document.createElement("a");
-    addButton.appendChild(document.createTextNode("下载视频"));
-    addButton.style.width = "100%";
-    addButton.style.backgroundColor = "#15388c";
-    addButton.style.color = "white";
-    addButton.style.textAlign = "center";
-    addButton.style.padding = "5px 10px";
-    addButton.style.margin = "0px 10px";
-    addButton.style.fontSize = "14px";
-    addButton.style.border = "0";
-    addButton.style.cursor = "pointer";
-    addButton.style.borderRadius = "2px";
-    addButton.style.fontFamily = "Roboto, Arial, sans-serif";
-    addButton.style.textDecoration = "none";
-    addButton.href = "https://zh.savefrom.net/#url=" + window.location.href;
-    addButton.target = "_blank";
-    buttonDiv.appendChild(addButton);
-    var targetElement = document.querySelectorAll("[id='count']");
-    for (var i = 0; i < targetElement.length; i++) {
-        if (targetElement[i].className.indexOf("ytd-video-primary-info-renderer") > -1) {
-            targetElement[i].appendChild(buttonDiv);
-        }
-    }
+.d-flex{
+display: flex;
 }
-
-
-})();
+.f-1{
+flex: 1;
+}
+.fs-14px{
+font-size: 14px;
+}
+.of-h{
+overflow: hidden;
+}
+.box{
+border-bottom: 1px solid var(--yt-border-color);
+font-family: Arial;
+}
+.box-toggle{
+margin: 3px;
+user-select: none;
+-moz-user-select: -moz-none;
+}
+.box-toggle:hover{
+color: blue;
+}
+.ytdl-link-btn{
+display: block;
+border: 1px solid !important;
+border-radius: 3px;
+text-decoration: none !important;
+outline: 0;
+text-align: center;
+padding: 2px;
+margin: 5px;
+color: black;
+}
+a.ytdl-link-btn{
+text-decoration: none;
+}
+a.ytdl-link-btn:hover{
+color: blue;
+}
+.box.dark{
+color: var(--ytd-video-primary-info-renderer-title-color, var(--yt-primary-text-color));
+}
+.box.dark .ytdl-link-btn{
+color: var(--ytd-video-primary-info-renderer-title-color, var(--yt-primary-text-color));
+}
+.box.dark .ytdl-link-btn:hover{
+color: rgba(200, 200, 255, 0.8);
+}
+.box.dark .box-toggle:hover{
+color: rgba(200, 200, 255, 0.8);
+}
+`
+	shadow.appendChild($el('style', { textContent: css }))
+})()

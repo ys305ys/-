@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         解除B站区域限制
 // @namespace    http://tampermonkey.net/
-// @version      7.5.13
+// @version      7.7.2
 // @description  通过替换获取视频地址接口的方式, 实现解除B站区域限制; 只对HTML5播放器生效;
 // @author       ipcjs
 // @supportURL   https://github.com/ipcjs/bilibili-helper/issues
@@ -26,7 +26,7 @@
 'use strict';
 const log = console.log.bind(console, 'injector:')
 
-if (location.href.match('link.acg.tv/forum.php') != null) {
+if (location.href.match(/^https?:\/\/link\.acg\.tv\/forum\.php/) != null) {
     if (location.href.match('access_key') != null && window.opener != null) {
         window.stop();
         document.children[0].innerHTML = '<title>BALH - 授权</title><meta charset="UTF-8" name="viewport" content="width=device-width">正在跳转……';
@@ -154,6 +154,9 @@ function scriptSource(invokeBy) {
         }
         return result
     }
+    const _raw = (str) => str.replace(/(\.|\?)/g, '\\$1')
+    const util_regex_url = (url) => new RegExp(`^(https?:)?//${_raw(url)}`)
+    const util_regex_url_path = (path) => new RegExp(`^(https?:)?//[\\w\\-\\.]+${_raw(path)}`)
 
     const util_log_hub = (function () {
         const tag = GM_info.script.name + '.msg'
@@ -1065,8 +1068,8 @@ function scriptSource(invokeBy) {
                                 let cb = value
                                 value = function (event) {
                                     if (target.readyState === 4) {
-                                        if (target.responseURL.includes('bangumi.bilibili.com/view/web_api/season/user/status')
-                                            || target.responseURL.includes('api.bilibili.com/pgc/view/web/season/user/status')) {
+                                        if (target.responseURL.match(util_regex_url('bangumi.bilibili.com/view/web_api/season/user/status'))
+                                            || target.responseURL.match(util_regex_url('api.bilibili.com/pgc/view/web/season/user/status'))) {
                                             log('/season/user/status:', target.responseText)
                                             let json = JSON.parse(target.responseText)
                                             let rewriteResult = false
@@ -1084,7 +1087,7 @@ function scriptSource(invokeBy) {
                                                     container.responseText = JSON.stringify(json)
                                                 }
                                             }
-                                        } else if (target.responseURL.includes('bangumi.bilibili.com/web_api/season_area')) {
+                                        } else if (target.responseURL.match(util_regex_url('bangumi.bilibili.com/web_api/season_area'))) {
                                             log('/season_area', target.responseText)
                                             let json = JSON.parse(target.responseText)
                                             if (json.code === 0 && json.result) {
@@ -1094,7 +1097,7 @@ function scriptSource(invokeBy) {
                                                     container.responseText = JSON.stringify(json)
                                                 }
                                             }
-                                        } else if (target.responseURL.includes('api.bilibili.com/x/web-interface/nav')) {
+                                        } else if (target.responseURL.match(util_regex_url('api.bilibili.com/x/web-interface/nav'))) {
                                             let json = JSON.parse(target.responseText)
                                             log('/x/web-interface/nav', (json.data && json.data.isLogin)
                                                 ? { uname: json.data.uname, isLogin: json.data.isLogin, level: json.data.level_info.current_level, vipType: json.data.vipType, vipStatus: json.data.vipStatus }
@@ -1104,7 +1107,7 @@ function scriptSource(invokeBy) {
                                                 json.data.vipStatus = 1; // 状态, 启用
                                                 container.responseText = JSON.stringify(json)
                                             }
-                                        } else if (target.responseURL.includes('api.bilibili.com/x/player/playurl')) {
+                                        } else if (target.responseURL.match(util_regex_url('api.bilibili.com/x/player/playurl'))) {
                                             util_log('/x/player/playurl', 'origin', `block: ${container.__block_response}`, target.response)
                                             // todo      : 当前只实现了r.const.mode.REPLACE, 需要支持其他模式
                                             // 2018-10-14: 等B站全面启用新版再说(;¬_¬)
@@ -1153,7 +1156,7 @@ function scriptSource(invokeBy) {
                                                     }
                                                 })
                                         }
-                                        if (container.__url.match(/^(https?:)?\/\/api\.bilibili\.com\/x\/player\/playurl.*$/) && balh_config.enable_in_av) {
+                                        if (container.__url.match(util_regex_url('api.bilibili.com/x/player/playurl')) && balh_config.enable_in_av) {
                                             log('/x/player/playurl')
                                             // debugger
                                             bilibiliApis._playurl.asyncAjax(container.__url)
@@ -1205,7 +1208,7 @@ function scriptSource(invokeBy) {
                 let oriResultTransformerWhenProxyError
                 let one_api;
                 // log(param)
-                if (param.url.match('/web_api/get_source')) {
+                if (param.url.match(util_regex_url_path('/web_api/get_source'))) {
                     one_api = bilibiliApis._get_source;
                     oriResultTransformer = p => p
                         .then(json => {
@@ -1223,17 +1226,17 @@ function scriptSource(invokeBy) {
                                 return json;
                             }
                         })
-                } else if (param.url.match('/player/web_api/playurl') // 老的番剧页面playurl接口
-                    || param.url.match('/player/web_api/v2/playurl') // 新的番剧页面playurl接口
-                    || param.url.match(/^(https?:)?\/\/api\.bilibili\.com\/pgc\/player\/web\/playurl.*$/) // 新的番剧页面playurl接口
-                    || (balh_config.enable_in_av && param.url.match('//interface.bilibili.com/v2/playurl')) // 普通的av页面playurl接口
+                } else if (param.url.match(util_regex_url_path('/player/web_api/playurl')) // 老的番剧页面playurl接口
+                    || param.url.match(util_regex_url_path('/player/web_api/v2/playurl')) // 新的番剧页面playurl接口
+                    || param.url.match(util_regex_url('api.bilibili.com/pgc/player/web/playurl')) // 新的番剧页面playurl接口
+                    || (balh_config.enable_in_av && param.url.match(util_regex_url('interface.bilibili.com/v2/playurl'))) // 普通的av页面playurl接口
                 ) {
                     // 新playrul:
                     // 1. 部分页面参数放在param.data中
                     // 2. 成功时, 返回的结果放到了result中: {"code":0,"message":"success","result":{}}
                     // 3. 失败时, 返回的结果没变
                     let isNewPlayurl
-                    if (isNewPlayurl = param.url.includes('//api.bilibili.com/pgc/player/web/playurl')) {
+                    if (isNewPlayurl = param.url.match(util_regex_url('api.bilibili.com/pgc/player/web/playurl'))) {
                         if (param.data) {
                             param.url += `?${Object.keys(param.data).map(key => `${key}=${param.data[key]}`).join('&')}`
                             param.data = undefined
@@ -1289,7 +1292,7 @@ function scriptSource(invokeBy) {
                             return r
                         })
                         .compose(oriDispatchResultTransformer)
-                } else if (param.url.match('//interface.bilibili.com/player?')) {
+                } else if (param.url.match(util_regex_url('interface.bilibili.com/player?'))) {
                     if (balh_config.blocked_vip) {
                         mySuccess = function (data) {
                             try {
@@ -1308,7 +1311,7 @@ function scriptSource(invokeBy) {
                             oriSuccess(data);
                         };
                     }
-                } else if (param.url.match('//api.bilibili.com/x/ad/video?')) {
+                } else if (param.url.match(util_regex_url('api.bilibili.com/x/ad/video?'))) {
                     if (balh_config.remove_pre_ad) {
                         mySuccess = function (data) {
                             log('/ad/video', data)
@@ -1378,7 +1381,7 @@ function scriptSource(invokeBy) {
                             return util_async_wrapper(target.json.bind(target),
                                 oriResult => {
                                     util_debug('injectFetch:', target.url)
-                                    if (target.url.includes('/player/web_api/v2/playurl/html5')) {
+                                    if (target.url.match(util_regex_url_path('/player/web_api/v2/playurl/html5'))) {
                                         let cid = util_url_param(target.url, 'cid')
                                         return balh_api_plus_playurl(cid)
                                             .then(result => {
@@ -1725,6 +1728,35 @@ function scriptSource(invokeBy) {
                     return data;
                 }
             })
+            // https://github.com/kghost/bilibili-area-limit/issues/3
+            const playurl_by_kghost = new BilibiliApi({
+                _asyncAjax: function (originUrl) {
+                    const proxyHostMap = [
+                        [/僅.*港.*地區/, '//bilibili-hk-api.kghost.info/'],
+                        [/僅.*台.*地區/, '//bilibili-tw-api.kghost.info/'],
+                        [/.*/, '//bilibili-cn-api.kghost.info/'],
+                    ];
+                    let proxyHost
+                    for (const [regex, host] of proxyHostMap) {
+                        if (document.title.match(regex)) {
+                            proxyHost = host
+                            break;
+                        }
+                    }
+                    if (proxyHost) {
+                        return util_ajax(this.transToProxyUrl(originUrl, proxyHost))
+                            .then(r => this.processProxySuccess(r))
+                    } else {
+                        return Promise.reject("没有支持的服务器")
+                    }
+                },
+                transToProxyUrl: function (originUrl, proxyHost) {
+                    return originUrl.replace(/^(https:)?(\/\/api\.bilibili\.com\/)/, `$1${proxyHost}`)
+                },
+                processProxySuccess: function (result) {
+                    return result.result
+                },
+            })
             const playurl = new BilibiliApi({
                 asyncAjax: function (originUrl) {
                     util_ui_player_msg('从代理服务器拉取视频地址中...')
@@ -1741,6 +1773,14 @@ function scriptSource(invokeBy) {
                                     return playurl_by_proxy._asyncAjax(originUrl, true)
                                         .catch(e2 => Promise.reject(e))
                                 }
+                            }
+                            return Promise.reject(e)
+                        })
+                        .catch(e => {
+                            if (typeof e === 'object' && e.statusText == 'error') {
+                                util_ui_player_msg('尝试使用kghost的服务器拉取视频地址...')
+                                return playurl_by_kghost._asyncAjax(originUrl)
+                                    .catch(e2 => Promise.reject(e))
                             }
                             return Promise.reject(e)
                         })
@@ -2194,7 +2234,7 @@ function scriptSource(invokeBy) {
             if (util_page.av()) {
                 tryRedirectToBangumiOrInsertPlayer()
             }
-        })
+        }, util_init.PRIORITY.DEFAULT, util_init.RUN_AT.COMPLETE)
         return true // 随便返回一个值...
     }())
     const balh_feature_FillSeasonList = (function () {
@@ -2315,31 +2355,32 @@ function scriptSource(invokeBy) {
 
     const balh_ui_setting = (function () {
         function addSettingsButton() {
-            var indexNav = document.getElementById('index_nav') || document.querySelector('.bangumi-nav-right') || document.querySelector('#fixnav_report'),
-                bottom = '110px',
-                size = '46px', settingBtnSvgContainer;
-            if (indexNav == null) {
-                // 信息页添加到按钮右侧
-                if (util_page.bangumi_md()) {
-                    indexNav = document.querySelector('.media-info-btns');
-                    indexNav.appendChild(_('style', {}, [_('text', `
+            let indexNav = document.querySelector('.bangumi-nav-right, #index_nav, #fixnav_report')
+            let settingBtnSvgContainer
+            const createBtnStyle = (size, diffCss) => {
+                diffCss = diffCss || `
                     #balh-settings-btn {
-                        float: left;
-                        margin: 3px 0 0 20px;
-                        height: 44px;
-                        width: 44px;
-                        background: #FFF;
-                        border-radius: 10px;
+                        bottom: 110px;
+                        border: 1px solid #e5e9ef;
+                        border-radius: 4px;
+                        background: #f6f9fa;
+                        margin-top: 4px;
+                    }
+                    #balh-settings-btn .btn-gotop {
+                        text-align: center;
+                    }
+                `
+                return _('style', {}, [_('text', `
+                    ${diffCss}
+                    #balh-settings-btn {
+                        width: ${size};
+                        height: ${size};
                         cursor: pointer;
                     }
                     #balh-settings-btn:hover {
                         background: #00a1d6;
                         border-color: #00a1d6;
                     }            
-                    #balh-settings-btn>:first-child {
-                        text-align: center;
-                        height: 100%;
-                    }
                     #balh-settings-btn .icon-saturn {
                         width: 30px;
                         height: ${size};
@@ -2348,40 +2389,44 @@ function scriptSource(invokeBy) {
                     #balh-settings-btn:hover .icon-saturn {
                         fill: white;
                     }            
-                    `)]))
+            `)])
+            }
+            if (indexNav == null) {
+                // 信息页添加到按钮右侧
+                if (util_page.bangumi_md()) {
+                    indexNav = document.querySelector('.media-info-btns');
+                    indexNav.appendChild(createBtnStyle('44px', `
+                        #balh-settings-btn {
+                            float: left;
+                            margin: 3px 0 0 20px;
+                            background: #FFF;
+                            border-radius: 10px;
+                        }
+                        #balh-settings-btn>:first-child {
+                            text-align: center;
+                            height: 100%;
+                        }
+                    `))
+                } else {
+                    // 新版视频页面的“返回页面顶部”按钮, 由Vue控制, 对内部html的修改会被重置, 故只能重新创建新的indexNav
+                    let navTools = document.querySelector('.nav-tools, .float-nav')
+                    if (navTools) {
+                        let bottom = navTools.className.includes('float-nav') ? '53px' : '45px'
+                        indexNav = document.body.appendChild(_('div', { style: { position: 'fixed', right: '6px', bottom: bottom, zIndex: '129', textAlign: 'center', display: 'none' } }))
+                        indexNav.appendChild(createBtnStyle('45px'))
+                        window.addEventListener('scroll', (event) => {
+                            indexNav.style.display = window.scrollY < 600 ? 'none' : ''
+                        })
+                    }
+                }
+                if (indexNav) {
                     settingBtnSvgContainer = indexNav.appendChild(_('div', { id: 'balh-settings-btn', title: GM_info.script.name + ' 设置', event: { click: showSettings } }, [_('div', {})])).firstChild;
                 }
             } else {
                 // 视频页添加到回顶部下方
                 window.dispatchEvent(new Event('resize'));
                 indexNav.style.display = 'block';
-                indexNav.appendChild(_('style', {}, [_('text', `
-                #balh-settings-btn {
-                    bottom: 110px;
-                    border: 1px solid #e5e9ef;
-                    border-radius: 4px;
-                    background: #f6f9fa;
-                    margin-top: 4px;
-                    width: ${size};
-                    height: ${size};
-                    cursor: pointer;
-                }
-                #balh-settings-btn:hover {
-                    background: #00a1d6;
-                    border-color: #00a1d6;
-                }            
-                #balh-settings-btn .btn-gotop {
-                    text-align: center;
-                }
-                #balh-settings-btn .icon-saturn {
-                    width: 30px;
-                    height: ${size};
-                    fill: rgb(153,162,170);
-                }
-                #balh-settings-btn:hover .icon-saturn {
-                    fill: white;
-                }            
-                `)]))
+                indexNav.appendChild(createBtnStyle('46px'))
                 settingBtnSvgContainer = indexNav.appendChild(_('div', { id: 'balh-settings-btn', title: GM_info.script.name + ' 设置', event: { click: showSettings } }, [_('div', { className: 'btn-gotop' })])).firstChild;
             }
             settingBtnSvgContainer && (settingBtnSvgContainer.innerHTML = `<!-- https://www.flaticon.com/free-icon/saturn_53515 --><svg class="icon-saturn" viewBox="0 0 612.017 612.017"><path d="M596.275,15.708C561.978-18.59,478.268,5.149,380.364,68.696c-23.51-7.384-48.473-11.382-74.375-11.382c-137.118,0-248.679,111.562-248.679,248.679c0,25.902,3.998,50.865,11.382,74.375C5.145,478.253-18.575,561.981,15.724,596.279c34.318,34.318,118.084,10.655,216.045-52.949c23.453,7.365,48.378,11.344,74.241,11.344c137.137,0,248.679-111.562,248.679-248.68c0-25.862-3.979-50.769-11.324-74.24C606.931,133.793,630.574,50.026,596.275,15.708zM66.435,545.53c-18.345-18.345-7.919-61.845,23.338-117.147c22.266,39.177,54.824,71.716,94.02,93.943C128.337,553.717,84.837,563.933,66.435,545.53z M114.698,305.994c0-105.478,85.813-191.292,191.292-191.292c82.524,0,152.766,52.605,179.566,125.965c-29.918,41.816-68.214,87.057-113.015,131.839c-44.801,44.819-90.061,83.116-131.877,113.034C167.303,458.76,114.698,388.479,114.698,305.994z M305.99,497.286c-3.156,0-6.236-0.325-9.354-0.459c35.064-27.432,70.894-58.822,106.11-94.059c35.235-35.235,66.646-71.046,94.058-106.129c0.153,3.118,0.479,6.198,0.479,9.354C497.282,411.473,411.469,497.286,305.99,497.286z M428.379,89.777c55.303-31.238,98.803-41.683,117.147-23.338c18.402,18.383,8.187,61.902-23.204,117.377C500.095,144.62,467.574,112.043,428.379,89.777z"/></svg>`);
@@ -2571,7 +2616,10 @@ function scriptSource(invokeBy) {
                         _('a', { id: 'balh-copy-log', href: 'javascript:;', event: { click: onCopyClick } }, [_('text', '复制日志&问题反馈')]),
                         _('text', '　'),
                         _('a', { id: 'balh-issue-link', href: r.url.issue, target: '_blank', style: { display: 'none' } }, [_('text', '问题反馈')]),
-                        _('text', '作者: ipcjs esterTion FlandreDaisuki　接口：BiliPlus')
+                        _('text', '作者: ipcjs esterTion FlandreDaisuki'),
+                        _('text', ' 接口：'),
+                        _('a', { href: 'https://www.biliplus.com/' }, [_('text', ' BiliPlus ')]),
+                        _('a', { href: 'https://github.com/kghost/bilibili-area-limit' }, [_('text', ' kghost ')]),
                     ]),
                     _('textarea', { id: 'balh-textarea-copy', style: { display: 'none' } })
                 ])
@@ -2580,9 +2628,7 @@ function scriptSource(invokeBy) {
 
         util_init(() => {
             if (!(util_page.player() || (util_page.av() && !balh_config.enable_in_av))) {
-                if (!util_page.av()) { // av页面添加这个按钮不知道为啥页面会混乱...屏蔽掉(;¬_¬)
-                    addSettingsButton()
-                }
+                addSettingsButton()
             }
         }, util_init.PRIORITY.DEFAULT, util_init.RUN_AT.DOM_LOADED_AFTER)
         return {

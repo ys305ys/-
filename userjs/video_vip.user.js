@@ -2,7 +2,7 @@
 // @name              视频跳过广告和 VIP 视频解析
 // @name:en           Kill ADs and Watch VIP Videos
 // @namespace         http://mofiter.com/
-// @version           1.5
+// @version           1.6
 // @description       也许是风格最贴近原视频网站的 VIP 视频解析脚本了，添加的解析按钮样式跟原视频网站已有的按钮一致，不会产生突兀感，支持腾讯视频、爱奇艺、优酷、土豆、芒果 TV、搜狐视频、乐视视频、PPTV等，支持多个解析接口切换，支持自定义接口，支持站内站外解析，支持 Tampermonkey、Violentmonkey、Greasemonkey
 // @description:en    maybe it's the most similar VIP videos script to origin website
 // @author            mofiter
@@ -39,11 +39,9 @@
                                  {"name":"1717yun","type":"站内","url":"https://www.1717yun.com/jx/ty.php?url="},
                                  {"name":"金桥","type":"站内","url":"https://www.jqaaa.com/jx.php?url="},
                                  {"name":"618g","type":"站内","url":"https://jx.618g.com/?url="},
-                                 {"name":"大表哥","type":"站内","url":"https://jx.biaoge.tv/index.php?url="},
                                  {"name":"1717yun","type":"站外","url":"https://www.1717yun.com/jx/ty.php?url="},
                                  {"name":"m1907","type":"站外","url":"https://z1.m1907.cn/?jx="},
-                                 {"name":"大表哥","type":"站外","url":"https://jx.biaoge.tv/index.php?url="},
-                                 {"name":"糖果","type":"站外","url":"https://www.tg321.cn/jx/?url="}];
+                                 {"name":"beac","type":"站外","url":"https://beaacc.com/api.php?url="}];
 
     //自定义 log 函数
     function mylog(param1,param2){

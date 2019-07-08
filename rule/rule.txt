@@ -1,5 +1,5 @@
 ; Summary: Proxy Rule List
-; Date: 2019.3.22
+; Date: 2019.7.8
 
 #BEGIN
 
@@ -9,6 +9,7 @@
 *://*.vimeocdn.com/*
 *://*.bing.com/*
 *://itunes.apple.com/*
+*://greasyfork.org/*
 
 ; news
 *://*.economist.com/*
@@ -25,7 +26,6 @@
 *://*.minecraft.net/*
 
 ; education
-*://*.sci-hub.*/*
 *://*.rus.ec/*
 *://*.userapi.com/*
 
